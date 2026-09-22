@@ -5,6 +5,7 @@ const spanishMessages=new Set(["Antes de confirmar asistencia, indica fecha, hor
 spanishMessages.add('El enlace no es válido o ha caducado. Pide uno nuevo a Richard.');
 spanishMessages.add('No se ha confirmado el envío. Reintenta este mismo lote; si continúa, contacta con Richard.');
 spanishMessages.add('Selecciona entre 1 y 30 invitados por envío.');
+['Puedes añadir hasta dos invitados.','Escribe el nombre de cada invitado (máximo 100 caracteres).','Las indicaciones alimentarias pueden tener hasta 1000 caracteres.'].forEach(x=>spanishMessages.add(x));
 function errorMessage(error,status=0){
  const message=typeof error==='string'?error:(error?.message||error?.msg||error?.error_description||'');
  const code=error?.code||error?.error_code||'';
@@ -53,7 +54,7 @@ async function apply(before,after,role){
  if(changedUsers.length+changedEvents.length===0)return await snapshot();
  if(changedUsers.length+changedEvents.length!==1)throw Error('La operación debe modificar una única ficha o comida.');
  if(changedUsers.length){const u=changedUsers[0];await rpc(role==='guest'?'guest_profile':'save_user',role==='guest'?{p_token:guestToken,p_profile:u}:{p_user:u});}
- if(changedEvents.length){const e=changedEvents[0];if(role==='admin')await rpc('save_event',{p_event:e});else{const old=before.events.find(x=>x.id===e.id),next=e.invitations[0],prev=old.invitations[0];if(next.vote!==prev.vote)await rpc('guest_vote',{p_token:guestToken,p_option:next.vote,p_revision:e.revision});else await rpc('guest_reply',{p_token:guestToken,p_response:next.response,p_revision:e.revision});}}
+ if(changedEvents.length){const e=changedEvents[0];if(role==='admin')await rpc('save_event',{p_event:e});else{const old=before.events.find(x=>x.id===e.id),next=e.invitations[0],prev=old.invitations[0];if(next.vote!==prev.vote)await rpc('guest_vote',{p_token:guestToken,p_option:next.vote,p_revision:e.revision});else await rpc('guest_reply_with_companions',{p_token:guestToken,p_response:next.response,p_revision:e.revision,p_companions:next.companions||[]});}}
  return await snapshot();
 }
 async function invitation(eventId,userId){const token=Array.from(crypto.getRandomValues(new Uint8Array(32)),n=>n.toString(16).padStart(2,'0')).join('');await rpc('issue_invitation',{p_event:eventId,p_user:userId,p_token:token});const url=new URL(cfg.siteUrl);url.hash='i='+btoa(String.fromCharCode(...token.match(/../g).map(x=>parseInt(x,16)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');return url.href;}
