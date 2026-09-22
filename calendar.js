@@ -1,0 +1,10 @@
+(function(root){
+function start(e){if(!/^\d{4}-\d{2}-\d{2}$/.test(e.date||'')||!/^\d{2}:\d{2}$/.test(e.time||''))throw Error('Falta la fecha o la hora de la comida.');const target=Date.parse(e.date+'T'+e.time+':00Z');let stamp=target;const fmt=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});for(let n=0;n<3;n++){const p=Object.fromEntries(fmt.formatToParts(new Date(stamp)).map(x=>[x.type,x.value]));const local=Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`);stamp+=target-local;}return new Date(stamp);}
+const stamp=d=>d.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');
+const details=e=>['Comidas SAIH',e.mapsUrl?'Mapa: '+e.mapsUrl:'',e.websiteUrl?'Restaurante: '+e.websiteUrl:'','Duración orientativa: 2 horas. Puedes ajustarla en tu calendario.'].filter(Boolean).join('\n');
+const escape=s=>String(s||'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');
+function fold(line){let out='',part='',size=0;for(const c of line){const n=new TextEncoder().encode(c).length;if(size+n>74){out+=part+'\r\n';part=' ';size=1;}part+=c;size+=n;}return out+part;}
+function ics(e){const s=start(e),end=new Date(s.getTime()+7200000);return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Comidas SAIH//ES','CALSCALE:GREGORIAN','BEGIN:VEVENT','UID:'+escape(e.id)+'@comidas.reichmax.com','DTSTAMP:'+stamp(new Date()),'DTSTART:'+stamp(s),'DTEND:'+stamp(end),'SUMMARY:'+escape(e.title),'LOCATION:'+escape(e.place),'DESCRIPTION:'+escape(details(e)),'END:VEVENT','END:VCALENDAR'].map(fold).join('\r\n')+'\r\n';}
+function google(e){const s=start(e);return 'https://calendar.google.com/calendar/render?'+new URLSearchParams({action:'TEMPLATE',text:e.title,dates:stamp(s)+'/'+stamp(new Date(s.getTime()+7200000)),ctz:'Europe/Madrid',location:e.place||'',details:details(e)});}
+root.SaihCalendar={ics,google,start};if(typeof module!=='undefined')module.exports=root.SaihCalendar;
+})(globalThis);

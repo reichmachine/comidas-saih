@@ -7,6 +7,7 @@ spanishMessages.add('No se ha confirmado el envío. Reintenta este mismo lote; s
 spanishMessages.add('Selecciona entre 1 y 30 invitados por envío.');
 ['Puedes añadir hasta dos invitados.','Escribe el nombre de cada invitado (máximo 100 caracteres).','Las indicaciones alimentarias pueden tener hasta 1000 caracteres.'].forEach(x=>spanishMessages.add(x));
 ['La comida no existe. Actualiza la página.','Reabre la comida o amplía el plazo antes de añadir personas.','Selecciona al menos una persona.','Alguna persona ya no existe. Actualiza la página.'].forEach(x=>spanishMessages.add(x));
+['Amplía el plazo para que puedan responder al recordatorio.','No hay destinatarios para este recordatorio.'].forEach(x=>spanishMessages.add(x));
 function errorMessage(error,status=0){
  const message=typeof error==='string'?error:(error?.message||error?.msg||error?.error_description||'');
  const code=error?.code||error?.error_code||'';
@@ -60,7 +61,7 @@ async function apply(before,after,role){
  return await snapshot();
 }
 async function invitation(eventId,userId){const token=Array.from(crypto.getRandomValues(new Uint8Array(32)),n=>n.toString(16).padStart(2,'0')).join('');await rpc('issue_invitation',{p_event:eventId,p_user:userId,p_token:token});const url=new URL(cfg.siteUrl);url.hash='i='+btoa(String.fromCharCode(...token.match(/../g).map(x=>parseInt(x,16)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');return url.href;}
-async function sendInvitations(eventId,userIds,requestId){if(!cfg.emailEnabled)throw Error('Falta conectar la cuenta de correo para activar el envío automático.');return request('/functions/v1/send-invitations',{eventId,userIds,requestId});}
+async function sendInvitations(eventId,userIds,requestId,kind='invitation',audience='active'){if(!cfg.emailEnabled)throw Error('Falta conectar la cuenta de correo para activar el envío automático.');return request('/functions/v1/send-invitations',{eventId,userIds,requestId,kind,audience});}
 for(const text of errorMessage.toString().matchAll(/return '([^']+)'/g))spanishMessages.add(text[1]);
 const addInvitees=(eventId,userIds)=>rpc('add_invitees',{p_event:eventId,p_users:userIds});
 root.SaihRemote={addInvitees,errorMessage,emailEnabled:!!cfg.emailEnabled,sendInvitations,enabled,initialize,login,logout,snapshot,apply,invitation};
