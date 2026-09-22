@@ -49,8 +49,9 @@ async function login(email){await request('/auth/v1/otp?redirect_to='+encodeURIC
 async function logout(){try{if(access)await request('/auth/v1/logout',{});}finally{access='';sessionStorage.removeItem(SESSION);}}
 async function apply(before,after,role){
  // Send only the intended mutation: never write a cached database snapshot.
- const changedUsers=after.users.filter(u=>JSON.stringify(u)!==JSON.stringify(before.users.find(x=>x.id===u.id)));
- const changedEvents=after.events.filter(e=>JSON.stringify(e)!==JSON.stringify(before.events.find(x=>x.id===e.id)));
+ const previousUsers=new Map(before.users.map(u=>[u.id,u])),previousEvents=new Map(before.events.map(e=>[e.id,e]));
+ const changedUsers=after.users.filter(u=>JSON.stringify(u)!==JSON.stringify(previousUsers.get(u.id)));
+ const changedEvents=after.events.filter(e=>JSON.stringify(e)!==JSON.stringify(previousEvents.get(e.id)));
  if(changedUsers.length+changedEvents.length===0)return await snapshot();
  if(changedUsers.length+changedEvents.length!==1)throw Error('La operación debe modificar una única ficha o comida.');
  if(changedUsers.length){const u=changedUsers[0];await rpc(role==='guest'?'guest_profile':'save_user',role==='guest'?{p_token:guestToken,p_profile:u}:{p_user:u});}
