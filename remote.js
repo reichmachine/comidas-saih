@@ -8,12 +8,16 @@ spanishMessages.add('Selecciona entre 1 y 30 invitados por envío.');
 ['Puedes añadir hasta dos invitados.','Escribe el nombre de cada invitado (máximo 100 caracteres).','Las indicaciones alimentarias pueden tener hasta 1000 caracteres.'].forEach(x=>spanishMessages.add(x));
 ['La comida no existe. Actualiza la página.','Reabre la comida o amplía el plazo antes de añadir personas.','Selecciona al menos una persona.','Alguna persona ya no existe. Actualiza la página.'].forEach(x=>spanishMessages.add(x));
 ['Amplía el plazo para que puedan responder al recordatorio.','No hay destinatarios para este recordatorio.'].forEach(x=>spanishMessages.add(x));
+['Las contraseñas no coinciden.','La contraseña debe tener al menos 12 caracteres.','No se pudo guardar la sesión en este navegador.'].forEach(x=>spanishMessages.add(x));
 function errorMessage(error,status=0){
  const message=typeof error==='string'?error:(error?.message||error?.msg||error?.error_description||'');
  const code=error?.code||error?.error_code||'';
  if(spanishMessages.has(message))return message.replace('Pide uno nuevo a la organización.', 'Pide uno nuevo a Richard.');
  if(code==='signup_disabled'||code==='user_not_found'||/signups not allowed|user not found/i.test(message))return 'Este correo no está registrado para acceder al evento. Comprueba la dirección o contacta con Richard.';
  if(code==='email_address_invalid'||/invalid email address|email address.*invalid/i.test(message))return 'Introduce una dirección de correo válida.';
+ if(code==='invalid_credentials'||/invalid login credentials/i.test(message))return 'El correo o la contraseña no son correctos.';
+ if(code==='weak_password')return 'La contraseña no cumple los requisitos de seguridad. Usa una contraseña más larga y diferente.';
+ if(code==='same_password')return 'Elige una contraseña distinta de la anterior.';
  if(status===429||/rate.limit|too many requests|security purposes|too many emails/i.test(message))return 'Has realizado demasiados intentos. Espera unos minutos antes de volver a intentarlo.';
  if(/expired|otp_expired|invalid.*token|invalid.*jwt/i.test(code+' '+message))return 'El enlace de acceso ha caducado o no es válido. Solicita uno nuevo.';
  if(status===401||/session.*missing|not authenticated/i.test(message))return 'Tu sesión ha caducado. Vuelve a acceder con tu correo.';
@@ -24,13 +28,25 @@ function errorMessage(error,status=0){
  if(status>=500||/email.*send|sending.*email|smtp/i.test(message))return 'El servicio no está disponible en este momento. Vuelve a intentarlo dentro de unos minutos.';
  return 'No se ha podido completar la operación. Vuelve a intentarlo. Si el problema continúa, contacta con Richard.';
 }
-let access='',guestToken='';
+let access='',guestToken='',refreshToken='',expiresAt=0,remember=false,recovery=false,refreshing;
+const PERSIST=SESSION+'-remembered';
 const headers=()=>({'Content-Type':'application/json',apikey:cfg.publishableKey,...(access?{Authorization:'Bearer '+access}:{})});
-async function request(path,payload,method='POST'){
+function clearSession(){access='';refreshToken='';expiresAt=0;recovery=false;try{sessionStorage.removeItem(SESSION);localStorage.removeItem(PERSIST);}catch{}}
+function tokenExpiry(token){try{return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).exp||0;}catch{return 0;}}
+function adopt(value){access=value.access_token||'';refreshToken=value.refresh_token||'';expiresAt=Number(value.expires_at)||tokenExpiry(access);recovery=!!value.recovery;}
+function saveSession(){const value=JSON.stringify({access_token:access,refresh_token:refreshToken,expires_at:expiresAt,recovery});try{if(remember){localStorage.setItem(PERSIST,value);sessionStorage.removeItem(SESSION);}else{sessionStorage.setItem(SESSION,value);localStorage.removeItem(PERSIST);}}catch{throw Error('No se pudo guardar la sesión en este navegador.');}}
+async function rawRequest(path,payload,method='POST'){
  const res=await fetch(cfg.supabaseUrl.replace(/\/$/,'')+path,{method,headers:headers(),...(payload!==undefined?{body:JSON.stringify(payload)}:{})});
  const text=await res.text();let value;try{value=text?JSON.parse(text):null;}catch{throw Error('El servicio devolvió una respuesta inesperada.');}
- if(!res.ok){if(res.status===401){access='';sessionStorage.removeItem(SESSION);}throw Error(errorMessage(value,res.status));}return value;
+ if(!res.ok){const error=Error(errorMessage(value,res.status));error.status=res.status;throw error;}return value;
 }
+async function ensureSession(){
+ if(guestToken||!access)return;
+ const refresh=async()=>{if(remember){const saved=localStorage.getItem(PERSIST);if(!saved){clearSession();throw Error('Tu sesión ha caducado. Vuelve a acceder con tu correo.');}adopt(JSON.parse(saved));}if(expiresAt>Date.now()/1000+60||!refreshToken)return;
+ try{const wasRecovery=recovery;const value=await rawRequest('/auth/v1/token?grant_type=refresh_token',{refresh_token:refreshToken});adopt({...value,recovery:wasRecovery});saveSession();}catch(error){if(error.status===400||error.status===401)clearSession();throw error;}};
+ if(!refreshing)refreshing=(root.navigator?.locks?root.navigator.locks.request('saih-auth-refresh',refresh):refresh()).finally(()=>{refreshing=null;});return refreshing;
+}
+async function request(path,payload,method='POST'){await ensureSession();try{return await rawRequest(path,payload,method);}catch(error){if(error.status===401&&!guestToken)clearSession();throw error;}}
 const rpc=(name,args={})=>request('/rest/v1/rpc/saih_'+name,args);
 async function initialize(){
  if(!enabled)return {role:'admin'};
@@ -41,14 +57,18 @@ async function initialize(){
  if(guestToken){access='';return {role:'guest',data:await snapshot()};}
  const token=hash.get('access_token');
  if(hash.get('error_description')){history.replaceState(null,'',location.pathname+location.search);throw Error(errorMessage({message:hash.get('error_description'),code:hash.get('error_code')}));}
- access=token||sessionStorage.getItem(SESSION)||'';
- if(token){history.replaceState(null,'',location.pathname+location.search);}
+ if(token){remember=false;adopt({access_token:token,refresh_token:hash.get('refresh_token'),expires_at:hash.get('expires_at'),recovery:hash.get('type')==='recovery'});history.replaceState(null,'',location.pathname+location.search);}
+ else{let saved=sessionStorage.getItem(SESSION);if(!saved){try{saved=localStorage.getItem(PERSIST);remember=!!saved;}catch{}}if(saved){try{adopt(JSON.parse(saved));}catch{access=saved;expiresAt=tokenExpiry(saved);}}}
  if(!access)return {role:'login'};
- try{await request('/auth/v1/user',undefined,'GET');const data=await snapshot();sessionStorage.setItem(SESSION,access);return {role:'admin',data};}catch(error){access='';sessionStorage.removeItem(SESSION);throw error;}
+ try{await ensureSession();const data=await snapshot();saveSession();return {role:recovery?'recovery':'admin',data};}catch(error){if(error.status===401||error.status===403||error.message==='Este correo no tiene acceso de organización.')clearSession();throw error;}
 }
+
 const snapshot=()=>rpc(guestToken?'guest_view':'admin_snapshot',guestToken?{p_token:guestToken}:{});
 async function login(email){await request('/auth/v1/otp?redirect_to='+encodeURIComponent(cfg.siteUrl),{email,create_user:false});}
-async function logout(){try{if(access)await request('/auth/v1/logout',{});}finally{access='';sessionStorage.removeItem(SESSION);}}
+async function passwordLogin(email,password,persist){clearSession();guestToken='';remember=!!persist;const value=await rawRequest('/auth/v1/token?grant_type=password',{email,password});adopt(value);try{const data=await rawRequest('/rest/v1/rpc/saih_admin_snapshot',{});saveSession();return {role:'admin',data};}catch(error){clearSession();throw error;}}
+async function recover(email){await rawRequest('/auth/v1/recover?redirect_to='+encodeURIComponent(cfg.siteUrl),{email});}
+async function updatePassword(password){if(password.length<12)throw Error('La contraseña debe tener al menos 12 caracteres.');await snapshot();await request('/auth/v1/user',{password},'PUT');recovery=false;saveSession();}
+async function logout(){try{await ensureSession();if(access)await rawRequest('/auth/v1/logout',{});}finally{clearSession();}}
 async function apply(before,after,role){
  // Send only the intended mutation: never write a cached database snapshot.
  const previousUsers=new Map(before.users.map(u=>[u.id,u])),previousEvents=new Map(before.events.map(e=>[e.id,e]));
@@ -64,7 +84,7 @@ async function invitation(eventId,userId){const token=Array.from(crypto.getRando
 async function sendInvitations(eventId,userIds,requestId,kind='invitation',audience='active'){if(!cfg.emailEnabled)throw Error('Falta conectar la cuenta de correo para activar el envío automático.');return request('/functions/v1/send-invitations',{eventId,userIds,requestId,kind,audience});}
 for(const text of errorMessage.toString().matchAll(/return '([^']+)'/g))spanishMessages.add(text[1]);
 const addInvitees=(eventId,userIds)=>rpc('add_invitees',{p_event:eventId,p_users:userIds});
-root.SaihRemote={addInvitees,errorMessage,emailEnabled:!!cfg.emailEnabled,sendInvitations,enabled,initialize,login,logout,snapshot,apply,invitation};
+root.SaihRemote={passwordLogin,recover,updatePassword,addInvitees,errorMessage,emailEnabled:!!cfg.emailEnabled,sendInvitations,enabled,initialize,login,logout,snapshot,apply,invitation};
 })(globalThis);
 
 
