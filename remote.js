@@ -82,9 +82,11 @@ async function apply(before,after,role){
 }
 async function invitation(eventId,userId){const token=Array.from(crypto.getRandomValues(new Uint8Array(32)),n=>n.toString(16).padStart(2,'0')).join('');await rpc('issue_invitation',{p_event:eventId,p_user:userId,p_token:token});const url=new URL(cfg.siteUrl);url.hash='i='+btoa(String.fromCharCode(...token.match(/../g).map(x=>parseInt(x,16)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');return url.href;}
 async function sendInvitations(eventId,userIds,requestId,kind='invitation',audience='active'){if(!cfg.emailEnabled)throw Error('Falta conectar la cuenta de correo para activar el envío automático.');return request('/functions/v1/send-invitations',{eventId,userIds,requestId,kind,audience});}
+for(const message of ['Los datos han cambiado. Actualiza la página antes de guardar.','La asistencia se confirma después de la encuesta.','Esta persona no está invitada a la comida.','Comida no encontrada.'])spanishMessages.add(message);
 for(const text of errorMessage.toString().matchAll(/return '([^']+)'/g))spanishMessages.add(text[1]);
 const addInvitees=(eventId,userIds)=>rpc('add_invitees',{p_event:eventId,p_users:userIds});
-root.SaihRemote={passwordLogin,recover,updatePassword,addInvitees,errorMessage,emailEnabled:!!cfg.emailEnabled,sendInvitations,enabled,initialize,login,logout,snapshot,apply,invitation};
+const adminReply=(eventId,userId,response,previous,revision)=>rpc('admin_reply',{p_event:eventId,p_user:userId,p_response:response,p_previous:previous,p_revision:revision});
+root.SaihRemote={adminReply,passwordLogin,recover,updatePassword,addInvitees,errorMessage,emailEnabled:!!cfg.emailEnabled,sendInvitations,enabled,initialize,login,logout,snapshot,apply,invitation};
 })(globalThis);
 
 
