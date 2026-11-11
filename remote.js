@@ -13,7 +13,7 @@ function errorMessage(error,status=0){
  const message=typeof error==='string'?error:(error?.message||error?.msg||error?.error_description||'');
  const code=error?.code||error?.error_code||'';
  if(spanishMessages.has(message))return message.replace('Pide uno nuevo a la organización.', 'Pide uno nuevo a Richard.');
- if(code==='signup_disabled'||code==='user_not_found'||/signups not allowed|user not found/i.test(message))return 'Este correo no está registrado para acceder al evento. Comprueba la dirección o contacta con Richard.';
+ if(code==='signup_disabled'||code==='user_not_found'||/signups not allowed|user not found/i.test(message))return 'Este acceso es solo para el administrador. Si eres invitado, utiliza tu enlace personal o solicita uno nuevo.';
  if(code==='email_address_invalid'||/invalid email address|email address.*invalid/i.test(message))return 'Introduce una dirección de correo válida.';
  if(code==='invalid_credentials'||/invalid login credentials/i.test(message))return 'El correo o la contraseña no son correctos.';
  if(code==='weak_password')return 'La contraseña no cumple los requisitos de seguridad. Usa una contraseña más larga y diferente.';
@@ -52,6 +52,7 @@ async function initialize(){
  if(!enabled)return {role:'admin'};
  if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(cfg.supabaseUrl)||!cfg.publishableKey||!/^https:\/\//.test(cfg.siteUrl))throw Error('Falta completar la conexión y la dirección pública de la web.');
  const hash=new URLSearchParams(location.hash.slice(1));
+ if((hash.has('invite')&&!/^[0-9a-f]{64}$/.test(hash.get('invite')||''))||(hash.has('i')&&!/^[A-Za-z0-9_-]{43}$/.test(hash.get('i')||'')))throw Error('Este enlace no es válido o ha sido sustituido. Solicita uno nuevo.');
  guestToken=hash.get('invite')||'';
  const short=hash.get('i');if(short){if(!/^[A-Za-z0-9_-]{43}$/.test(short))throw Error('El enlace no es válido.');guestToken=Array.from(atob(short.replace(/-/g,'+').replace(/_/g,'/')+'='),c=>c.charCodeAt(0).toString(16).padStart(2,'0')).join('');}
  if(guestToken){access='';return {role:'guest',data:await snapshot()};}
@@ -84,9 +85,12 @@ async function invitation(eventId,userId){const token=Array.from(crypto.getRando
 async function sendInvitations(eventId,userIds,requestId,kind='invitation',audience='active'){if(!cfg.emailEnabled)throw Error('Falta conectar la cuenta de correo para activar el envío automático.');return request('/functions/v1/send-invitations',{eventId,userIds,requestId,kind,audience});}
 for(const message of ['Los datos han cambiado. Actualiza la página antes de guardar.','La asistencia se confirma después de la encuesta.','Esta persona no está invitada a la comida.','Comida no encontrada.'])spanishMessages.add(message);
 for(const text of errorMessage.toString().matchAll(/return '([^']+)'/g))spanishMessages.add(text[1]);
+const hasGuestLink=()=>{const h=new URLSearchParams(location.hash.slice(1));return h.has('invite')||h.has('i');};
+const recoverInvitation=email=>rawRequest('/functions/v1/recover-invitation',{email});
+for(const message of ['Este enlace ha caducado. Solicita uno nuevo para acceder a tu invitación.','Este enlace no es válido o ha sido sustituido. Solicita uno nuevo.'])spanishMessages.add(message);
 const addInvitees=(eventId,userIds)=>rpc('add_invitees',{p_event:eventId,p_users:userIds});
 const adminReply=(eventId,userId,response,previous,revision)=>rpc('admin_reply',{p_event:eventId,p_user:userId,p_response:response,p_previous:previous,p_revision:revision});
-root.SaihRemote={adminReply,passwordLogin,recover,updatePassword,addInvitees,errorMessage,emailEnabled:!!cfg.emailEnabled,sendInvitations,enabled,initialize,login,logout,snapshot,apply,invitation};
+root.SaihRemote={hasGuestLink,recoverInvitation,adminReply,passwordLogin,recover,updatePassword,addInvitees,errorMessage,emailEnabled:!!cfg.emailEnabled,sendInvitations,enabled,initialize,login,logout,snapshot,apply,invitation};
 })(globalThis);
 
 
